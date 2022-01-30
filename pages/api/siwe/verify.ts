@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next'
-import { generateNonce, SiweMessage } from 'siwe'
+import { SiweMessage } from 'siwe'
 
 const handler = async (req: NextApiRequest, res: NextApiResponse) => {
   if (req.method === 'POST') {
@@ -7,9 +7,9 @@ const handler = async (req: NextApiRequest, res: NextApiResponse) => {
     const siweMessage = new SiweMessage(message)
     try {
       await siweMessage.validate(signature)
-      res.send(true)
+      res.json({ valid: true })
     } catch {
-      res.send(false)
+      res.json({ valid: false })
     }
     return
   }

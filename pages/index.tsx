@@ -1,82 +1,138 @@
-import Head from 'next/head'
+import { ethers } from 'ethers'
+import React, { useEffect } from 'react'
+import { SiweMessage } from 'siwe'
+import Web3Modal from 'web3modal'
 
-export default function Home() {
+const connect = async () => {
+  const providerOptions = {
+    /* See Provider Options Section */
+  }
+
+  const web3Modal = new Web3Modal({
+    network: 'mainnet', // optional
+    cacheProvider: true, // optional
+    providerOptions, // required
+  })
+
+  const instance = await web3Modal.connect()
+  const provider = new ethers.providers.Web3Provider(instance)
+  const signer = provider.getSigner()
+
+  return signer
+}
+
+const domain = process.env.NEXT_PUBLIC_DOMAIN
+
+const origin = process.env.NEXT_PUBLIC_BASE_URL
+
+async function signInWithEthereum() {
+  const signer = await connect()
+  const message = await createSiweMessage(
+    await signer.getAddress(),
+    'Sign in with Ethereum to the app.'
+  )
+
+  const signature = await signer.signMessage(message)
+
+  const verified = await sendForVerification(message, signature)
+
+  const { ensName, ensAvatarUrl } = await getENSData(await signer.getAddress())
+
+  return { verified, ensName, ensAvatarUrl }
+}
+
+async function createSiweMessage(address: string, statement: string) {
+  const res = await fetch(`/api/siwe/nonce`).then((res) => res.json())
+  const message = new SiweMessage({
+    domain,
+    address,
+    statement,
+    uri: origin,
+    version: '1',
+    chainId: '1',
+    nonce: res.nonce,
+  })
+  return message.prepareMessage()
+}
+
+async function sendForVerification(message: string, signature: string) {
+  const res = await fetch('/api/siwe/verify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ message, signature }),
+  })
+
+  if (res.status !== 200) {
+    alert('There was an issue verifying your signature. Please try again.')
+    return false
+  }
+
+  const response = await res.json()
+
+  if (!response.valid) {
+    alert('There was an issue verifying your signature. Please try again.')
+    return false
+  }
+
+  return true
+}
+
+async function getENSData(address: string) {
+  const provider = new ethers.providers.EtherscanProvider()
+  const ensName = await provider.lookupAddress(address)
+  if (ensName) {
+    const ensAvatarUrl = await provider.getAvatar(ensName)
+    return { ensName, ensAvatarUrl }
+  }
+  return { ensName, ensAvatarUrl: null }
+}
+
+const LoginPage = () => {
+  const [isLoggedIn, setIsLoggedIn] = React.useState(false)
+  const [ensData, setENSData] = React.useState<{
+    ensName: string | null
+    ensAvatarUrl: string | null
+  }>({
+    ensName: null,
+    ensAvatarUrl: null,
+  })
+  useEffect(() => {
+    connect()
+  }, [])
+
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center py-2">
-      <Head>
-        <title>Create Next App</title>
-        <link rel="icon" href="/favicon.ico" />
-      </Head>
-
-      <main className="flex w-full flex-1 flex-col items-center justify-center px-20 text-center">
-        <h1 className="text-6xl font-bold">
-          Welcome to{' '}
-          <a className="text-blue-600" href="https://nextjs.org">
-            Next.js!
-          </a>
-        </h1>
-
-        <p className="mt-3 text-2xl">
-          Get started by editing{' '}
-          <code className="rounded-md bg-gray-100 p-3 font-mono text-lg">
-            pages/index.tsx
-          </code>
-        </p>
-
-        <div className="mt-6 flex max-w-4xl flex-wrap items-center justify-around sm:w-full">
-          <a
-            href="https://nextjs.org/docs"
-            className="mt-6 w-96 rounded-xl border p-6 text-left hover:text-blue-600 focus:text-blue-600"
-          >
-            <h3 className="text-2xl font-bold">Documentation &rarr;</h3>
-            <p className="mt-4 text-xl">
-              Find in-depth information about Next.js features and API.
-            </p>
-          </a>
-
-          <a
-            href="https://nextjs.org/learn"
-            className="mt-6 w-96 rounded-xl border p-6 text-left hover:text-blue-600 focus:text-blue-600"
-          >
-            <h3 className="text-2xl font-bold">Learn &rarr;</h3>
-            <p className="mt-4 text-xl">
-              Learn about Next.js in an interactive course with quizzes!
-            </p>
-          </a>
-
-          <a
-            href="https://github.com/vercel/next.js/tree/canary/examples"
-            className="mt-6 w-96 rounded-xl border p-6 text-left hover:text-blue-600 focus:text-blue-600"
-          >
-            <h3 className="text-2xl font-bold">Examples &rarr;</h3>
-            <p className="mt-4 text-xl">
-              Discover and deploy boilerplate example Next.js projects.
-            </p>
-          </a>
-
-          <a
-            href="https://vercel.com/import?filter=next.js&utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className="mt-6 w-96 rounded-xl border p-6 text-left hover:text-blue-600 focus:text-blue-600"
-          >
-            <h3 className="text-2xl font-bold">Deploy &rarr;</h3>
-            <p className="mt-4 text-xl">
-              Instantly deploy your Next.js site to a public URL with Vercel.
-            </p>
-          </a>
+    <div className="flex h-screen items-center justify-center">
+      {isLoggedIn && (
+        <div className="text-center">
+          <h1 className="text-3xl">
+            Hi{ensData.ensName ? ` ${ensData.ensName}` : ''}, You are logged in
+            with Ethereum!
+          </h1>
         </div>
-      </main>
+      )}
+      {!isLoggedIn && (
+        <button
+          className="rounded-md bg-indigo-500 from-indigo-400 to-indigo-800 px-4 py-2 font-bold text-white"
+          onClick={() =>
+            signInWithEthereum().then((res) => {
+              setIsLoggedIn(res.verified)
 
-      <footer className="flex h-24 w-full items-center justify-center border-t">
-        <a
-          className="flex items-center justify-center"
-          href="https://vercel.com?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+              if (res.verified) {
+                setENSData({
+                  ensName: res.ensName,
+                  ensAvatarUrl: res.ensAvatarUrl,
+                })
+              }
+            })
+          }
         >
-          Powered by{' '}
-          <img src="/vercel.svg" alt="Vercel Logo" className="ml-2 h-4" />
-        </a>
-      </footer>
+          Sign-In with Ethereum
+        </button>
+      )}
     </div>
   )
 }
+
+export default LoginPage
