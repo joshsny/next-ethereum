@@ -7,14 +7,16 @@ const handler = async (req: NextApiRequest, res: NextApiResponse) => {
     const siweMessage = new SiweMessage(message)
     try {
       await siweMessage.validate(signature)
-      res.json({ valid: true })
+      res.status(200).json({ valid: true })
+      return
     } catch {
-      res.json({ valid: false })
+      res.status(200).json({ valid: false })
+      return
     }
-    return
   }
 
   res.status(405).json({ error: 'Method not allowed' })
+  return
 }
 
 export default handler
